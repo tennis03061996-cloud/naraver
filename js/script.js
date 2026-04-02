@@ -1,14 +1,21 @@
-    let currentCode = '290000';
-    let currentName = '奈良';
-    let isInitialLoad = true;
+/* ==========================================
+   ▼▼▼ 変わらないデータ・設定エリア ▼▼▼
+   （天気コードや設定など。ここは基本触らなくてOK！）
+========================================== */
+const proxyUrl = "https://broken-disk-2256.tennis03061996.workers.dev/?url=";
 
+// 予備のイベントデータ（NAOJから取得できなかった時用）
+let astroEvents = [
+    { date: "4月22日", name: "こと座流星群が極大", type: "流星群" },
+    { date: "8月13日", name: "ペルセウス座流星群が極大", type: "流星群" },
+    { date: "10月6日", name: "中秋の名月", type: "月" }
+];
 
     const prefCoordinates = {
         "鹿児島": {lat: 31.5968, lon: 130.5570},"静岡": {lat: 34.9751, lon: 138.3832}, "大阪": {lat: 34.6937, lon: 135.5023}, "京都": {lat: 35.0116, lon: 135.7681},
         "兵庫": {lat: 34.6901, lon: 135.1955}, "滋賀": {lat: 35.0178, lon: 135.8546}, "奈良": {lat: 34.6851, lon: 135.8048},
         "和歌山": {lat: 34.2305, lon: 135.1706}, "沖縄": {lat: 26.2124, lon: 127.6809}, "石垣": {lat: 24.3448, lon: 124.1553}
     };
-
 
 const jmaIconMap = {
     "100":"100", "101":"101", "102":"102", "103":"102", "104":"104", "105":"104", "106":"102", "107":"102", "108":"102",
@@ -25,6 +32,12 @@ const jmaIconMap = {
     "400":"400", "401":"401", "402":"402", "403":"403", "405":"400", "406":"400", "407":"400", "409":"403",
     "411":"411", "413":"413", "414":"414", "420":"411", "421":"413", "422":"414", "423":"411", "425":"411", "426":"411", "427":"414",
     "450":"400"
+};
+
+const warnMap = {
+    "02":"暴風雪警報","03":"大雨警報","04":"洪水警報","05":"暴風警報","06":"大雪警報","07":"波浪警報","08":"高潮警報","09":"レベル3土砂災害警報",
+    "10":"大雨注意報","12":"大雪注意報","13":"風雪注意報","14":"雷注意報","15":"強風注意報","16":"波浪注意報","17":"融雪注意報","18":"洪水注意報","19":"高潮注意報","20":"濃霧注意報","21":"乾燥注意報","22":"なだれ注意報","23":"低温注意報","24":"霜注意報","25":"着氷注意報","26":"着雪注意報",
+    "32":"暴風雪特別警報","33":"大雨特別警報","35":"暴風特別警報","36":"大雪特別警報","37":"波浪特別警報","38":"高潮特別警報"
 };
 
 function decodeWMO(code) {
@@ -54,12 +67,15 @@ function telopToText(code) {
     if(first === "4") return "雪";
     return "不明";
 }
+/* ==========================================
+   ▲▲▲ 変わらないデータ・設定エリア 終了 ▲▲▲
+========================================== */
 
-const warnMap = {
-    "02":"暴風雪警報","03":"大雨警報","04":"洪水警報","05":"暴風警報","06":"大雪警報","07":"波浪警報","08":"高潮警報","09":"レベル3土砂災害警報",
-    "10":"大雨注意報","12":"大雪注意報","13":"風雪注意報","14":"雷注意報","15":"強風注意報","16":"波浪注意報","17":"融雪注意報","18":"洪水注意報","19":"高潮注意報","20":"濃霧注意報","21":"乾燥注意報","22":"なだれ注意報","23":"低温注意報","24":"霜注意報","25":"着氷注意報","26":"着雪注意報",
-    "32":"暴風雪特別警報","33":"大雨特別警報","35":"暴風特別警報","36":"大雪特別警報","37":"波浪特別警報","38":"高潮特別警報"
-};
+/* これより下はアプリを動かすためのメインエンジンだよ！ */
+
+    let currentCode = '290000';
+    let currentName = '奈良';
+    let isInitialLoad = true;
 
 function getLunarDetails(date) {
     const refDate = new Date(2000, 0, 6, 18, 14);
@@ -85,15 +101,132 @@ function openMoonModal() {
 
 function closeMoonModal() { document.getElementById('moonModal').style.display = 'none'; }
 
+// 表示件数を3件から5件に増やしたよ！
 function renderAstroEvents() {
     const container = document.getElementById('eventContainer');
-    container.innerHTML = ASTRO_EVENTS_2026.slice(0, 3).map(e => `
+    container.innerHTML = astroEvents.slice(0, 5).map(e => `
         <div class="event-item">
             <span class="event-tag">${e.type}</span>
-            <div style="color:white;"><b>${e.name}</b><br><small>${e.date}</small></div>
+            <div style="color:white;"><b>${e.name}</b><br><small style="color:#4ade80;">${e.date}</small></div>
         </div>
     `).join('');
 }
+
+// ▼ 進化版：今月と来月のページ両方を見に行って、月日を抜き出す！
+async function fetchNAOJEvents() {
+    const statusEl = document.getElementById('naojStatus');
+    if (!statusEl) return;
+    
+    try {
+        // 現在の年月と来月の年月を自動で計算するよ
+        const now = new Date();
+        const year1 = now.getFullYear();
+        const month1 = now.getMonth() + 1; 
+        
+        let year2 = year1;
+        let month2 = month1 + 1; 
+        if (month2 > 12) {
+            month2 = 1;
+            year2 += 1;
+        }
+
+        // 月の数字を2桁にする (例: 4 -> '04')
+        const m1Str = String(month1).padStart(2, '0');
+        const m2Str = String(month2).padStart(2, '0');
+
+        // 今月と来月の2つの詳細ページURLを作成
+        const url1 = `https://www.nao.ac.jp/astro/sky/${year1}/${m1Str}.html`;
+        const url2 = `https://www.nao.ac.jp/astro/sky/${year2}/${m2Str}.html`;
+
+        // 2つのページに同時にアクセスしてスピードアップ！
+        const [res1, res2] = await Promise.all([
+            fetch(proxyUrl + url1),
+            fetch(proxyUrl + url2).catch(() => null) // 来月分がまだなくてもエラーにしない安心設計
+        ]);
+
+        let newEvents = [];
+        const keywords = ['流星群', '月食', '日食', 'スーパームーン', '接近', '彗星', '満月', '新月', '極大', '最大光度'];
+
+        // ページの中身を解析して「〇〇日」と「イベント名」を抜き出す関数
+        async function parseMonthlyPage(res, targetMonth) {
+            if (!res || !res.ok) return;
+            const arrayBuffer = await res.arrayBuffer();
+            const textData = new TextDecoder("utf-8").decode(arrayBuffer);
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(textData, "text/html");
+            
+            // メニューなどの不要な部分を削除して、ノイズを減らす
+            doc.querySelectorAll('header, footer, nav, .local-nav, .breadcrumb').forEach(el => el.remove());
+
+            // ページ内のすべてのテキストを1行にまとめる
+            const fullText = doc.body.textContent.replace(/\s+/g, ' ');
+            
+            // 💡 ここが魔法！「〇〇日」という文字を基準にして、前後の文章を切り分けるよ！
+            const parts = fullText.split(/(?:^|[^\d])(\d{1,2})日/); 
+
+            for (let i = 1; i < parts.length; i += 2) {
+                const day = parts[i]; // 「日」の数字
+                let rawDesc = (parts[i+1] || "").trim(); // その日のイベント内容
+                
+                // 長すぎる説明文はカットしてスッキリ見せる（最大40文字）
+                if (rawDesc.length > 40) {
+                    const puncMatch = rawDesc.match(/^[^。！？]*[。！？]/);
+                    if (puncMatch && puncMatch[0].length < 40) {
+                        rawDesc = puncMatch[0];
+                    } else {
+                        rawDesc = rawDesc.substring(0, 40) + "...";
+                    }
+                }
+
+                // キーワードチェック
+                const hasKeyword = keywords.some(kw => rawDesc.includes(kw));
+                // 余計な案内文を弾く
+                const isNoise = rawDesc.includes("カレンダー") || rawDesc.includes("星空") || rawDesc.includes("参照") || rawDesc.includes("特集");
+
+                if (hasKeyword && !isNoise) {
+                    // 先頭の不要な記号（/ や 、など）を綺麗にお掃除
+                    let cleanName = rawDesc.replace(/^[\/／には、\s]+/, '').trim();
+                    if(!cleanName) continue;
+
+                    let typeTag = "星空";
+                    if (cleanName.includes("流星群")) typeTag = "流星群";
+                    else if (cleanName.includes("食")) typeTag = "天文現象";
+                    else if (cleanName.includes("月") || cleanName.includes("満月") || cleanName.includes("新月")) typeTag = "月";
+                    else if (cleanName.includes("接近")) typeTag = "惑星";
+                    else if (cleanName.includes("彗星")) typeTag = "彗星";
+
+                    // 全く同じイベントが登録されるのを防ぐ
+                    const isDuplicate = newEvents.some(e => e.name === cleanName || e.name.includes(cleanName));
+
+                    if (!isDuplicate) {
+                        newEvents.push({
+                            date: `${targetMonth}月${day}日`, // ✨ここで月と日を合体！
+                            name: cleanName,
+                            type: typeTag
+                        });
+                    }
+                }
+            }
+        }
+
+        // 今月と来月のページを順番に解析！
+        await parseMonthlyPage(res1, month1);
+        if (res2) await parseMonthlyPage(res2, month2);
+
+        if (newEvents.length > 0) {
+            astroEvents = newEvents;
+            renderAstroEvents();
+            statusEl.innerHTML = `✅ ${month1}月・${month2}月の詳細データを取得成功！`;
+            statusEl.style.color = "#4ade80";
+        } else {
+            statusEl.innerHTML = `⚠️ キーワードが見つからなかったよ（予備データを表示）`;
+        }
+    } catch (err) {
+        console.error("NAOJデータ取得エラー:", err);
+        statusEl.innerHTML = `⚠️ 通信エラー: 予備のイベントデータを表示中`;
+    }
+}
+// ▲ ここまでが進化版！
 
 async function fetchCurrentWeather(lat, lon, target) {
     try {
@@ -399,4 +532,3 @@ function loadHistory(code) {
         setTimeout(() => { fetchGPSWeather(false); }, 1000);
         isInitialLoad = false;
     };
-};
